@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use hlt::parse::Decodable;
 use hlt::entity::Entity;
 
@@ -25,5 +26,11 @@ impl Entity for Position {
 
     fn radius(&self) -> f64 {
         0.0
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "Position({}, {})", self.0 as f32, self.1 as f32)
     }
 }

@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use std::cmp::min;
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
 use hlt::entity::{Position, Planet, DockingStatus};
@@ -38,13 +39,14 @@ impl Ship {
 
     /// Determine wether a ship is already docked to a planet.
     pub fn is_docked(&self) -> bool {
-        self.docking_status == DockingStatus::DOCKED || self.docking_status == DockingStatus::UNDOCKING
+        self.docking_status == DockingStatus::DOCKED ||
+            self.docking_status == DockingStatus::UNDOCKING
     }
 
     /// Determine whether a ship can dock to a planet.
     pub fn can_dock(&self, planet: &Planet) -> bool {
         if self.is_docked() {
-            return false
+            return false;
         }
         self.distance_with(planet) <= (DOCK_RADIUS + planet.radius + SHIP_RADIUS)
     }
@@ -57,9 +59,14 @@ impl Ship {
     /// the algorithm will naively try `max_correction` degrees before giving
     /// up (and returning `None`). The navigation will only consist of up to one command;
     /// call this method again in the next turn to continue navigating to the position.
-    pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap, max_corrections: u32) -> Option<Command> {
+    pub fn navigate<T: Entity>(
+        &self,
+        target: &T,
+        game_map: &GameMap,
+        max_corrections: u32,
+    ) -> Option<Command> {
         if max_corrections == 0 {
-            return None
+            return None;
         }
         let angular_step = 1.0;
         let speed = MAX_SPEED;
@@ -117,5 +124,17 @@ impl Entity for Ship {
 
     fn radius(&self) -> f64 {
         SHIP_RADIUS
+    }
+}
+
+impl Display for Ship {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "Ship(id={}, pos={}, hp={}, velocity=({}, {}))",
+               self.id,
+               self.position,
+               self.hp,
+               self.velocity_x,
+               self.velocity_y,
+        )
     }
 }

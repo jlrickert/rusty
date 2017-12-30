@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use hlt::entity::Position;
 use hlt::parse::Decodable;
 use hlt::entity::Entity;
@@ -22,7 +23,8 @@ impl Planet {
         self.owner.is_some()
     }
 
-    /// Determines if the planet has been fully occupied (all possible ships are docked).
+    /// Determines if the planet has been fully occupied (all possible ships are
+    /// docked).
     pub fn is_full(&self) -> bool {
         self.docked_ships.len() >= self.num_docking_spots
     }
@@ -65,5 +67,20 @@ impl Entity for Planet {
 
     fn radius(&self) -> f64 {
         self.radius
+    }
+}
+
+impl Display for Planet {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(
+            f,
+            "Planet(id={}, pos={}, owner={})",
+            self.id,
+            self.position,
+            match self.owner {
+                Some(owner) => format!("{}", owner),
+                _ => "Unowned".to_string(),
+            },
+        )
     }
 }
