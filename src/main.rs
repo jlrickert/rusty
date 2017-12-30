@@ -1,69 +1,39 @@
-/*
- * This is a Rust implementation of the Settler starter bot for Halite-II
- * For the most part, the code is organized like the Python version, so see that
- * code for more information.
- */
-
 mod hlt;
+mod rusty;
 
-use hlt::entity::{Entity, DockingStatus};
 use hlt::game::Game;
-use hlt::logging::Logger;
+use rusty::Bot;
 
 fn main() {
-    let name = "Settler";
+    let name = "Rusty";
 
     // Initiailize the game
     let game = Game::new();
 
+    // Initiailize the bot
+    let mut rusty = Bot::new(&game);
+
     // Initialize logging
-    let mut logger = Logger::new(game.my_id);
-    logger.log(&format!("Starting my {} bot!", name));
+    // let mut logger = Logger::new(game.my_id);
+    // logger.log(&format!("Starting my {} bot!", name));
 
     // Retrieve the first game map
     let game_map = game.update_map();
 
     // You can preprocess things here,
     // you have 60 seconds...
+    rusty.initialize(&game_map);
 
     // Once you are done, send a "ready to work"
-    game.send_ready(name);
+    game.send_ready(&rusty.name);
 
     let mut command_queue = Vec::new();
-
     loop {
-
         // Update the game state
         let game_map = game.update_map();
 
-        // Loop over all of our player's ships
-        for ship in game_map.me().all_ships() {
-            // Ignore ships that are docked or in the process of docking
-            if ship.docking_status != DockingStatus::UNDOCKED {
-                continue;
-            }
+        rusty.play_round(&game_map, &mut command_queue);
 
-            // Loop over all planets
-            for planet in game_map.all_planets() {
-                // Ignore unowned planets
-                if planet.is_owned() {
-                    continue;
-                }
-
-                // If we are close enough to dock, do it!
-                if ship.can_dock(planet) {
-                    command_queue.push(ship.dock(planet))
-                } else {
-                    // If not, navigate towards the planet
-                    let navigate_command = ship.navigate(&ship.closest_point_to(planet, 3.0), &game_map, 90);
-                    if let Some(command) = navigate_command {
-                        command_queue.push(command)
-                    }
-
-                }
-                break;
-            }
-        }
         // Send our commands to the game
         game.send_command_queue(&command_queue);
         command_queue.clear();

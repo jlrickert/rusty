@@ -1,6 +1,5 @@
 pub mod entity;
 pub mod game;
-pub mod logging;
 pub mod command;
 pub mod constants;
 pub mod game_map;
