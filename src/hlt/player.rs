@@ -1,5 +1,5 @@
-use hlt::entity::Ship;
-use hlt::parse::Decodable;
+use super::entity::Ship;
+use super::parse::Decodable;
 
 #[derive(PartialEq, Debug)]
 pub struct Player {

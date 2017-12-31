@@ -1,8 +1,8 @@
 use std::io::{stdin, stdout, Write};
-use hlt::parse::Decodable;
-use hlt::entity::GameState;
-use hlt::command::Command;
-use hlt::game_map::GameMap;
+use super::parse::Decodable;
+use super::entity::GameState;
+use super::command::Command;
+use super::game_map::GameMap;
 
 #[derive(Debug)]
 pub struct Game {

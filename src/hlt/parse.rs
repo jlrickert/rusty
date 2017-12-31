@@ -13,11 +13,13 @@ where
     <T as FromStr>::Err: Debug,
 {
     let next_token = tokens.next().expect("Expected token, got EOF");
-    next_token.parse::<T>().unwrap_or_else(|_| panic!(
-        "Could not parse {:?} as expected type {:?}",
-        next_token,
-        type_name
-    ))
+    next_token.parse::<T>().unwrap_or_else(|_| {
+        panic!(
+            "Could not parse {:?} as expected type {:?}",
+            next_token,
+            type_name
+        )
+    })
 }
 
 impl Decodable for f64 {

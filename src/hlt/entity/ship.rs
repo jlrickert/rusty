@@ -1,11 +1,11 @@
 use std::fmt::{Display, Formatter, Result};
 use std::cmp::min;
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
-use hlt::entity::{Position, Planet, DockingStatus};
 use hlt::game_map::GameMap;
 use hlt::command::Command;
 use hlt::parse::Decodable;
-use hlt::entity::Entity;
+use super::{Position, Planet, DockingStatus};
+use super::Entity;
 
 /// A ship in the game.
 #[derive(PartialEq, Debug)]
