@@ -53,7 +53,7 @@ impl Bot {
                 id
             ));
             let cmd = unit.execute(&ship, game_map);
-            self.logger.log(&format!("{} executing {:?}", unit, cmd));
+            self.logger.log(&format!("{} executing {:?}", unit.to_string(game_map), cmd));
             if cmd.is_some() {
                 command_queue.push(cmd.unwrap());
             }
@@ -66,20 +66,20 @@ impl Bot {
             let unit = if self.fleet.contains_key(&ship.id) {
                 self.fleet.get_mut(&ship.id).unwrap()
             } else {
-                let behavior = if game_map.me().all_ships().len() < 5 && self.round < 30 {
+                let behavior = if self.round < 50 {
                     Behavior::Raider
                 } else if thread_rng().gen_range(0.0, 100.0) <= 75.0 {
-                    Behavior::Raider
-                } else {
                     Behavior::Settler
+                } else {
+                    Behavior::Raider
                 };
                 self.fleet.insert(ship.id, Unit::new(ship, behavior));
                 let u = self.fleet.get_mut(&ship.id).unwrap();
-                self.logger.log(&format!("Created new unit {}", u));
+                self.logger.log(&format!("Created new {}", u.to_string(game_map)));
                 u
             };
             unit.update(ship, game_map);
-            self.logger.log(&format!("Updating unit {}", unit));
+            self.logger.log(&format!("Updating {}", unit.to_string(game_map)));
         }
     }
 }

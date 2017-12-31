@@ -1,3 +1,4 @@
+use std::cmp::Ordering::{Less, Equal, Greater};
 use super::game::Game;
 use super::entity::{GameState, Planet};
 use super::constants::MAX_SPEED;
@@ -33,6 +34,26 @@ impl<'a> GameMap<'a> {
         &self.state.players
     }
 
+    pub fn get_planet(&self, planet_id: i32) -> Option<&Planet> {
+        for planet in self.all_planets() {
+            if planet.id == planet_id {
+                return Some(planet);
+            }
+        }
+        None
+    }
+
+    pub fn get_ship(&self, ship_id: i32) -> Option<&Ship> {
+        for player in self.all_players() {
+            for ship in player.all_ships() {
+                if ship.id == ship_id {
+                    return Some(ship);
+                }
+            }
+        }
+        None
+    }
+
     pub fn obstacles_between<T: Entity>(&self, ship: &Ship, target: &T) -> bool {
         for planet in self.all_planets() {
             if intersect_segment_circle(ship, target, planet, ship.radius() + 0.1) {
@@ -42,13 +63,28 @@ impl<'a> GameMap<'a> {
         false
     }
 
-    pub fn planet_between<T: Entity>(&self, ship: &Ship, target: &T) -> Option<&Planet> {
-        for planet in self.all_planets() {
-            if intersect_segment_circle(ship, target, planet, ship.radius() + 0.1) {
-                return Some(planet);
-            }
-        }
-        None
+    pub fn planet_between<T: Entity>(
+        &self,
+        ship: &Ship,
+        target: &T,
+        fudge: f64,
+    ) -> Option<&Planet> {
+        self.all_planets()
+            .iter()
+            .filter(|planet| {
+                intersect_segment_circle(ship, target, *planet, ship.radius() + fudge)
+            })
+            .min_by(|&a, &b| {
+                let dist_a = ship.distance_with(a);
+                let dist_b = ship.distance_with(b);
+                if dist_a < dist_b {
+                    Less
+                } else if dist_a == dist_b {
+                    Equal
+                } else {
+                    Greater
+                }
+            })
     }
 
     pub fn ship_between<T: Entity>(&self, ship: &Ship, target: &T) -> Option<&Ship> {
@@ -56,7 +92,7 @@ impl<'a> GameMap<'a> {
             for other in player.all_ships() {
                 let distance = ship.distance_with(other);
                 if distance >= MAX_SPEED as f64 || ship.id == other.id {
-                    continue
+                    continue;
                 }
                 if intersect_segment_circle(ship, target, other, other.radius() + 0.1) {
                     return Some(other);
@@ -64,5 +100,5 @@ impl<'a> GameMap<'a> {
             }
         }
         None
-}
+    }
 }

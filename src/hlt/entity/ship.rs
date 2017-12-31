@@ -1,7 +1,9 @@
+use std::cmp::min;
 use std::fmt::{Display, Formatter, Result};
-use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS};
+use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
 use hlt::command::Command;
 use hlt::parse::Decodable;
+use hlt::game_map::GameMap;
 use super::{Position, Planet, DockingStatus};
 use super::Entity;
 
@@ -69,6 +71,77 @@ impl Ship {
         let Position(target_x, target_y) = target.position();
         let x = target_x + radius * f64::cos(angle.to_radians());
         let y = target_y + radius * f64::sin(angle.to_radians());
+
+        Position(x, y)
+    }
+
+    pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Command> {
+        let colliding_planet = game_map.planet_between(self, target, 0.1);
+        if colliding_planet.is_none() {
+            return Some(self.adjusted_nav(target, game_map));
+        }
+
+        let planet = colliding_planet.unwrap();
+        let sub_target = {
+            let (left, right) = self.find_avoidance_pair(planet, self.radius());
+            if left.distance_with(target) < right.distance_with(target) {
+                left
+            } else {
+                right
+            }
+        };
+
+        Some(self.adjusted_nav(&sub_target, game_map))
+    }
+
+    fn adjusted_nav<T: Entity>(&self, target: &T, game_map: &GameMap) -> Command {
+        let distance = self.distance_with(target);
+        let angle = self.angle_with(target);
+        self.thrust(min(MAX_SPEED, distance as i32), angle as i32)
+    }
+
+    fn find_sub_target<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Position> {
+        game_map.planet_between(self, target, 0.1).and_then(
+            |planet| {
+                let (left, right) = self.find_avoidance_pair(planet, 0.1);
+                if left.distance_with(target) < right.distance_with(target) {
+                    Some(left)
+                } else {
+                    Some(right)
+                }
+            },
+        )
+    }
+
+    fn find_avoidance_pair<T: Entity>(&self, target: &T, padding: f64) -> (Position, Position) {
+        (
+            self.calc_left_positon(target, padding),
+            self.calc_right_positon(target, padding),
+        )
+    }
+
+    fn calc_left_positon<T: Entity>(&self, target: &T, padding: f64) -> Position {
+        let pos = target.position();
+        let distance = self.distance_with(target) + padding;
+        let radius = target.radius() + self.radius() + padding;
+        let angle = self.angle_with(target);
+        let offset = f64::asin(radius / distance);
+
+        let x = pos.0 + (pos.0 * f64::cos(offset));
+        let y = pos.1 + (pos.1 * f64::sin(offset));
+
+        Position(x, y)
+    }
+
+    fn calc_right_positon<T: Entity>(&self, target: &T, padding: f64) -> Position {
+        let pos = target.position();
+        let distance = self.distance_with(target) + padding;
+        let radius = target.radius() + self.radius() + padding;
+        let angle = self.angle_with(target);
+        let offset = -f64::asin(radius / distance);
+
+        let x = pos.0 + (pos.0 * f64::cos(offset));
+        let y = pos.1 + (pos.1 * f64::sin(offset));
 
         Position(x, y)
     }

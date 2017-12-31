@@ -11,6 +11,15 @@ impl Player {
     pub fn all_ships(&self) -> &[Ship] {
         &self.ships
     }
+
+    pub fn get_ship(&self, ship_id: i32) -> Option<&Ship> {
+        for ship in self.all_ships() {
+            if ship.id == ship_id {
+                return Some(ship)
+            }
+        }
+        None
+    }
 }
 
 impl Decodable for Player {
