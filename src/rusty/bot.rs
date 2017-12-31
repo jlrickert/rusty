@@ -22,7 +22,7 @@ pub struct Bot {
 impl Bot {
     pub fn new(game: &Game) -> Bot {
         Bot {
-            name: "Rusty".to_string(),
+            name: format!("rusty{}", game.my_id),
             round: 0,
             fleet: HashMap::new(),
             logger: Logger::new(game.my_id),
@@ -43,10 +43,7 @@ impl Bot {
             &format!("Playing round {}", self.round + 1),
         );
 
-        self.logger.log(&format!("Owned ships {:?}", game_map.me().all_ships()));
         self.update_units(&game_map);
-        self.logger.log(&format!("Current fleet {:?}", self.fleet));
-        // let units = self.find_units();
 
         // Loop over all of our player's ships
         for ship in game_map.me().all_ships() {
@@ -69,7 +66,9 @@ impl Bot {
             let unit = if self.fleet.contains_key(&ship.id) {
                 self.fleet.get_mut(&ship.id).unwrap()
             } else {
-                let behavior = if thread_rng().gen_range(0.0, 100.0) <= 50.0 {
+                let behavior = if game_map.me().all_ships().len() < 5 && self.round < 30 {
+                    Behavior::Raider
+                } else if thread_rng().gen_range(0.0, 100.0) <= 75.0 {
                     Behavior::Raider
                 } else {
                     Behavior::Settler

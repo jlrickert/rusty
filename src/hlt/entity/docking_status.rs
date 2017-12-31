@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result};
 use hlt::parse::Decodable;
 
 #[derive(PartialEq, Debug)]
@@ -22,5 +23,17 @@ impl Decodable for DockingStatus {
             3 => DockingStatus::UNDOCKING,
             _ => panic!("Not a valid docking status: {:?}", raw),
         }
+    }
+}
+
+
+impl Display for DockingStatus {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "{}", match *self {
+            DockingStatus::UNDOCKED => "undocked",
+            DockingStatus::DOCKING => "docked",
+            DockingStatus::DOCKED => "docked",
+            DockingStatus::UNDOCKING => "undocking",
+        })
     }
 }

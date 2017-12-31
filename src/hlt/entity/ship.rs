@@ -1,7 +1,5 @@
 use std::fmt::{Display, Formatter, Result};
-use std::cmp::min;
-use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
-use hlt::game_map::GameMap;
+use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS};
 use hlt::command::Command;
 use hlt::parse::Decodable;
 use super::{Position, Planet, DockingStatus};
@@ -37,7 +35,7 @@ impl Ship {
         Command::Undock(self.id)
     }
 
-    /// Determine wether a ship is already docked to a planet.
+    /// Determine whether a ship is already docked to a planet.
     pub fn is_docked(&self) -> bool {
         self.docking_status == DockingStatus::DOCKED ||
             self.docking_status == DockingStatus::UNDOCKING
@@ -51,36 +49,28 @@ impl Ship {
         self.distance_with(planet) <= (DOCK_RADIUS + planet.radius + SHIP_RADIUS)
     }
 
-    /// Move a ship to a specific target position. It is recommended to place the position
-    /// itself here, else navigate will crash into the target. This function will automatically
-    /// avoid obstacles on the way, with up to `max_corrections` corrections.
-    ///
-    /// Note that each correction accounts for 1 degree difference, meaning that
-    /// the algorithm will naively try `max_correction` degrees before giving
-    /// up (and returning `None`). The navigation will only consist of up to one command;
-    /// call this method again in the next turn to continue navigating to the position.
-    pub fn navigate<T: Entity>(
-        &self,
-        target: &T,
-        game_map: &GameMap,
-        max_corrections: u32,
-    ) -> Option<Command> {
-        if max_corrections == 0 {
-            return None;
-        }
-        let angular_step = 1.0;
-        let speed = MAX_SPEED;
-        let distance = self.distance_with(target);
+    /// Find the furthest point to the given ship near the given target, outside
+    /// its given radius a given distance away.
+    pub fn furthest_point_to<T: Entity>(&self, target: &T, distance: f64) -> Position {
         let angle = self.angle_with(target);
-        if game_map.obstacles_between(self, target) {
-            let new_target_dx = f64::cos((angle + angular_step).to_radians()) * distance;
-            let new_target_dy = f64::sin((angle + angular_step).to_radians()) * distance;
-            let Position(self_x, self_y) = self.position;
-            let new_target = Position(self_x + new_target_dx, self_y + new_target_dy);
-            self.navigate(&new_target, game_map, max_corrections - 1)
-        } else {
-            Some(self.thrust(min(speed, distance as i32), angle as i32))
-        }
+        let radius = target.radius() + distance;
+        let Position(target_x, target_y) = target.position();
+        let x = target_x + radius * f64::cos(angle.to_radians());
+        let y = target_y + radius * f64::sin(angle.to_radians());
+
+        Position(x, y)
+    }
+
+    /// Find the closest point to the given ship near the given target, outside
+    /// its given radius, with an added fudge of min_distance.
+    pub fn closest_point_to<T: Entity>(&self, target: &T, min_distance: f64) -> Position {
+        let angle = target.angle_with(self);
+        let radius = target.radius() + min_distance;
+        let Position(target_x, target_y) = target.position();
+        let x = target_x + radius * f64::cos(angle.to_radians());
+        let y = target_y + radius * f64::sin(angle.to_radians());
+
+        Position(x, y)
     }
 }
 
@@ -129,12 +119,13 @@ impl Entity for Ship {
 
 impl Display for Ship {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "Ship(id={}, pos={}, hp={}, velocity=({}, {}))",
+        write!(f, "Ship(\n\tid={},\n\tpos={},\n\thp={},\n\tvelocity=({}, {}),\n\tdocking_status={})",
                self.id,
                self.position,
                self.hp,
                self.velocity_x,
                self.velocity_y,
+               self.docking_status,
         )
     }
 }

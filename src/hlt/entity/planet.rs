@@ -74,7 +74,7 @@ impl Display for Planet {
     fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
             f,
-            "Planet(id={}, pos={}, owner={})",
+            "Planet(\n\tid={}, \n\tpos={}, \n\towner={})",
             self.id,
             self.position,
             match self.owner {

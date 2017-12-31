@@ -1,5 +1,3 @@
-extern crate rand;
-
 mod bot;
 mod logging;
 mod behavior;

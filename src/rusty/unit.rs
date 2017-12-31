@@ -1,9 +1,9 @@
 use std::fmt::{Display, Formatter, Result};
 use std::cmp::min;
 use std::cmp::Ordering::{Less, Equal, Greater};
-use hlt::constants::MAX_SPEED;
+use hlt::constants::{MAX_SPEED, DOCK_RADIUS};
 use hlt::command::Command;
-use hlt::entity::{Entity, Ship};
+use hlt::entity::{Entity, Ship, Position, Planet};
 use hlt::game_map::GameMap;
 
 use super::behavior::Behavior;
@@ -15,6 +15,7 @@ pub struct Unit {
     pub ship_id: i32,
     pub behavior: Behavior,
     pub target: Option<i32>,
+    target_pos: Option<Position>,
 }
 
 impl Unit {
@@ -23,23 +24,20 @@ impl Unit {
             behavior: behavior,
             ship_id: ship.id,
             target: None,
+            target_pos: None,
         }
     }
 
     /// Updates the units target if necessary
     pub fn update(&mut self, ship: &Ship, game_map: &GameMap) {
+        if ship.is_docked() {
+            return;
+        }
+
         match self.behavior {
-            Behavior::Settler => {
-                let target = self.update_settler_target(&ship, game_map);
-                if target.is_none() {
-                    self.behavior = Behavior::Raider;
-                    self.update(ship, game_map)
-                } else {
-                    self.target = target;
-                }
-            }
-            Behavior::Raider => self.target = self.update_raider_target(&ship, game_map),
-            Behavior::Defense => self.target = self.update_defender_target(&ship, game_map),
+            Behavior::Settler => self.update_settler(&ship, game_map),
+            Behavior::Raider => self.update_raider(&ship, game_map),
+            _ => (),
         }
     }
 
@@ -48,15 +46,11 @@ impl Unit {
         match self.behavior {
             Behavior::Settler => self.exec_settler(&ship, game_map),
             Behavior::Raider => self.exec_raider(&ship, game_map),
-            Behavior::Defense => self.exec_defender(&ship, game_map),
+            _ => self.exec_settler(&ship, game_map),
         }
     }
 
-    fn update_settler_target(&self, ship: &Ship, game_map: &GameMap) -> Option<i32> {
-        if ship.is_docked() {
-            return self.target;
-        }
-
+    fn update_settler(&mut self, ship: &Ship, game_map: &GameMap) {
         let bot_id = game_map.me().id;
         let target = if let Some(target) = self.target {
             game_map.all_planets().get(target as usize)
@@ -67,7 +61,7 @@ impl Unit {
         // find a new target
         let planet_iter = game_map.all_planets().iter();
 
-        planet_iter
+        let target = planet_iter
             .filter(|planet| if let Some(owner) = planet.owner {
                 (owner == bot_id) && !planet.is_full()
             } else {
@@ -84,7 +78,79 @@ impl Unit {
                     Greater
                 }
             })
-            .and_then(|planet| Some(planet.id))
+            .and_then(|planet| Some(planet.id));
+
+        if target.is_none() {
+            self.behavior = Behavior::Raider;
+            self.target = None;
+            self.target_pos = None;
+            self.update(ship, game_map);
+        } else {
+            self.target = target;
+        }
+    }
+
+    fn update_raider(&mut self, ship: &Ship, game_map: &GameMap) {
+        let me = game_map.me().id;
+
+        let done = self.target
+            .and_then(|target| game_map.all_planets().get(target as usize))
+            .and_then(|planet| {
+                planet.owner.and_then(|owner| Some(owner != me)).or_else(
+                    || {
+                        let unowned_planets: Vec<&Planet> = game_map
+                            .all_planets()
+                            .iter()
+                            .filter(|planet| planet.owner.is_none())
+                            .collect();
+                        Some(unowned_planets.len() == 0)
+                    },
+                )
+            })
+            .unwrap_or(false);
+
+        if done {
+            return;
+        }
+
+        let planet_iter = game_map.all_planets().iter();
+        let planet = planet_iter
+            .filter(|planet| if let Some(owner) = planet.owner {
+                owner != me
+            } else {
+                true
+            })
+            .min_by(|&a, &b| {
+                let dist_a = ship.distance_with(a);
+                let dist_b = ship.distance_with(b);
+
+                if a.owner.is_none() && b.owner.is_some() {
+                    Less
+                } else if a.owner != Some(me) && b.owner == Some(me) {
+                    Less
+                } else if b.owner.is_none() && a.owner.is_some() {
+                    Greater
+                } else if b.owner != Some(me) && a.owner == Some(me) {
+                    Greater
+                } else {
+                    if dist_a < dist_b {
+                        Less
+                    } else if dist_a == dist_b {
+                        Equal
+                    } else {
+                        Greater
+                    }
+                }
+            });
+
+        if let Some(target) = planet {
+            self.target = Some(target.id);
+            if target.owner.is_some() {
+                self.target_pos = Some(ship.furthest_point_to(target, 3.0));
+            } else {
+                self.target_pos = Some(ship.closest_point_to(target, 3.0));
+            }
+        }
     }
 
     fn exec_settler(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
@@ -100,54 +166,16 @@ impl Unit {
     fn exec_raider(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
         self.target
             .and_then(|id| game_map.all_planets().get(id as usize))
-            .and_then(|planet| if ship.can_dock(planet) {
+            .and_then(|planet| if ship.can_dock(planet) &&
+                (ship.distance_with(&self.target_pos.unwrap()) <
+                     DOCK_RADIUS)
+            {
                 Some(ship.dock(planet))
             } else {
-                self.navigate(ship, &ship.closest_point_to(planet, 3.0), game_map)
+                self.navigate(ship, &self.target_pos.unwrap(), game_map)
             })
     }
 
-    fn update_raider_target(&self, ship: &Ship, game_map: &GameMap) -> Option<i32> {
-        if ship.is_docked() {
-            return self.target;
-        }
-
-        let bot_id = game_map.me().id;
-        let target = if let Some(target) = self.target {
-            game_map.all_planets().get(target as usize)
-        } else {
-            None
-        };
-
-        if target.is_some() {
-            if ship.is_docked() {
-                return self.target;
-            }
-        }
-
-        let planet_iter = game_map.all_planets().iter();
-        planet_iter
-            .filter(|planet| {
-                let bot_id = game_map.me().id;
-                if let Some(owner) = planet.owner {
-                    (owner != bot_id)
-                } else {
-                    true
-                }
-            })
-            .min_by(|&a, &b| {
-                let dist_a = ship.distance_with(a);
-                let dist_b = ship.distance_with(b);
-                if dist_a < dist_b {
-                    Less
-                } else if dist_a == dist_b {
-                    Equal
-                } else {
-                    Greater
-                }
-            })
-            .and_then(|planet| Some(planet.id))
-    }
 
     fn exec_defender(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
         None
@@ -203,16 +231,26 @@ impl Unit {
             );
         }
         let offset = f64::asin(radius / distance).to_degrees();
-        ship.thrust(min(speed, distance as i32), (angle + offset) as i32)
+        ship.thrust(
+            min(speed, (distance - magic_number) as i32),
+            (angle + offset) as i32,
+        )
     }
 }
 
 impl Display for Unit {
     fn fmt(&self, f: &mut Formatter) -> Result {
-        write!(f, "Unit(ship_id={}, behavior={}, target={})",
+        write!(f, "Unit(\n\tship_id={}, \n\tbehavior={}, \n\ttarget_id={}, \n\ttarget_pos={})",
                self.ship_id,
                self.behavior,
-               format!("{:?}", self.target),
+               format!("{}",
+                       self.target
+                       .and_then(|id| Some(id.to_string()))
+                       .unwrap_or("None".to_string())),
+               format!("{}",
+                       self.target_pos
+                       .and_then(|pos| Some(format!("{}", pos)))
+                       .unwrap_or("None".to_string())),
         )
     }
 }

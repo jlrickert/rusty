@@ -34,16 +34,4 @@ pub trait Entity: Sized {
 
         (f64::atan2(y2-y1, x2-x1).to_degrees() + 360.0) % 360.0
     }
-
-    /// Find the closest point to the given ship near the given target, outside its given radius,
-    /// with an added fudge of min_distance.
-    fn closest_point_to<T: Entity>(&self, target: &T, min_distance: f64) -> Position {
-        let angle = target.angle_with(self);
-        let radius = target.radius() + min_distance;
-        let Position(target_x, target_y) = target.position();
-        let x = target_x + radius * f64::cos(angle.to_radians());
-        let y = target_y + radius * f64::sin(angle.to_radians());
-
-        Position(x, y)
-    }
 }
