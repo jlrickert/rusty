@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 
+#[derive(Debug)]
 pub struct Logger(File);
 
 impl Logger {

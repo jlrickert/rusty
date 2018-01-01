@@ -9,17 +9,17 @@ use super::behavior::Behavior;
 
 struct UnitState {}
 
+
 #[derive(Debug)]
 pub struct Unit {
     pub ship_id: i32,
-    // ship: &'a Ship
     pub behavior: Behavior,
     pub target: Option<i32>,
     target_pos: Option<Position>,
 }
 
 impl Unit {
-    pub fn new(ship: &Ship, behavior: Behavior) -> Unit {
+    pub fn new(ship: &Ship, behavior: Behavior) -> Self {
         Unit {
             behavior: behavior,
             ship_id: ship.id,
@@ -53,7 +53,10 @@ impl Unit {
                 self.ship_id
             ))
         }
+
         if ship.is_docked() {
+            self.target = None;
+            self.target_pos = None;
             return;
         }
 
@@ -188,14 +191,15 @@ impl Unit {
 
     fn exec_raider(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
         self.target
-            .and_then(|id| game_map.all_planets().get(id as usize))
-            .and_then(|planet| if ship.can_dock(planet) &&
-                (ship.distance_with(&self.target_pos.unwrap()) <
-                     DOCK_RADIUS)
-            {
-                Some(ship.dock(planet))
-            } else {
-                ship.navigate(&self.target_pos.unwrap(), game_map)
+            .and_then(|id| game_map.get_planet(self.target.unwrap()))
+            .and_then(|planet| {
+                let can_dock = ship.can_dock(planet);
+                let planet_exists = planet.hp > 0;
+                if can_dock && planet_exists {
+                    Some(ship.dock(planet))
+                } else {
+                    ship.navigate(&self.target_pos.unwrap(), game_map)
+                }
             })
     }
 

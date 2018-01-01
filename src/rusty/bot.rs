@@ -7,20 +7,22 @@ use hlt::entity::{Entity, DockingStatus};
 use hlt::game::Game;
 use hlt::game_map::GameMap;
 
+
 use self::rand::{thread_rng, Rng};
 use super::behavior::Behavior;
 use super::logging::Logger;
 use super::unit::Unit;
 
+#[derive(Debug)]
 pub struct Bot {
     pub name: String,
     pub round: i32,
-    fleet: HashMap<i32, Unit>,
+    pub fleet: HashMap<i32, Unit>,
     logger: Logger,
 }
 
 impl Bot {
-    pub fn new(game: &Game) -> Bot {
+    pub fn new(game: &Game) -> Self {
         Bot {
             name: format!("rusty{}", game.my_id),
             round: 0,

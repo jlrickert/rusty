@@ -1,3 +1,4 @@
+use std::f64;
 use std::cmp::min;
 use std::fmt::{Display, Formatter, Result};
 use hlt::constants::{DOCK_RADIUS, SHIP_RADIUS, MAX_SPEED};
@@ -76,74 +77,54 @@ impl Ship {
     }
 
     pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Command> {
-        let colliding_planet = game_map.planet_between(self, target, 0.1);
+        let colliding_planet = game_map.planet_between(self, target, self.radius() + 0.1);
         if colliding_planet.is_none() {
-            return Some(self.adjusted_nav(target, game_map));
+            let distance = self.distance_with(target);
+            let angle = self.angle_with(target);
+            return Some(self.thrust(min(MAX_SPEED, distance as i32), angle as i32));
         }
 
         let planet = colliding_planet.unwrap();
-        let sub_target = {
-            let (left, right) = self.find_avoidance_pair(planet, self.radius());
+        let (sub_target, is_left) = {
+            let (left, right) = self.find_avoidance_pair(planet, 3.0);
             if left.distance_with(target) < right.distance_with(target) {
-                left
+                (left, true)
             } else {
-                right
+                (right, false)
             }
         };
 
-        Some(self.adjusted_nav(&sub_target, game_map))
+        let distance = self.distance_with(&sub_target);
+        let angle = self.angle_with(&sub_target);
+        Some(self.thrust(min(MAX_SPEED, distance as i32), angle as i32))
     }
 
-    fn adjusted_nav<T: Entity>(&self, target: &T, game_map: &GameMap) -> Command {
+    fn find_avoidance_pair<T: Entity>(&self, target: &T, min_distance: f64) -> (Position, Position) {
+        let pos = target.position();
+        let radius = target.radius() + self.radius() + min_distance;
         let distance = self.distance_with(target);
         let angle = self.angle_with(target);
-        self.thrust(min(MAX_SPEED, distance as i32), angle as i32)
-    }
+        let offset = if radius >= distance {
+            f64::consts::PI/2.0
+        } else {
+            f64::asin(radius / distance)
+        };
 
-    fn find_sub_target<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Position> {
-        game_map.planet_between(self, target, 0.1).and_then(
-            |planet| {
-                let (left, right) = self.find_avoidance_pair(planet, 0.1);
-                if left.distance_with(target) < right.distance_with(target) {
-                    Some(left)
-                } else {
-                    Some(right)
-                }
-            },
-        )
-    }
+        // cos(a+o+90)(p_r+f)+p_x, sin(a+o+90)(p_r+f)t+p_y)
 
-    fn find_avoidance_pair<T: Entity>(&self, target: &T, padding: f64) -> (Position, Position) {
-        (
-            self.calc_left_positon(target, padding),
-            self.calc_right_positon(target, padding),
-        )
-    }
+        let pi = f64::consts::PI;
+        let left = {
+            let x = pos.0 + (pos.0 + min_distance) * f64::cos(angle + offset + pi / 2.0);
+            let y = pos.1 + (pos.1 + min_distance) * f64::sin(angle + offset + pi / 2.0);
+            Position(x, y)
+        };
+        let right = {
+            let x = pos.0 + (pos.0 + min_distance) * f64::cos(angle + offset + pi / 2.0);
+            let y = pos.1 + (pos.1 + min_distance) * f64::sin(angle + offset - pi / 2.0);
+            Position(x, y)
+        };
 
-    fn calc_left_positon<T: Entity>(&self, target: &T, padding: f64) -> Position {
-        let pos = target.position();
-        let distance = self.distance_with(target) + padding;
-        let radius = target.radius() + self.radius() + padding;
-        let angle = self.angle_with(target);
-        let offset = f64::asin(radius / distance);
-
-        let x = pos.0 + (pos.0 * f64::cos(offset));
-        let y = pos.1 + (pos.1 * f64::sin(offset));
-
-        Position(x, y)
-    }
-
-    fn calc_right_positon<T: Entity>(&self, target: &T, padding: f64) -> Position {
-        let pos = target.position();
-        let distance = self.distance_with(target) + padding;
-        let radius = target.radius() + self.radius() + padding;
-        let angle = self.angle_with(target);
-        let offset = -f64::asin(radius / distance);
-
-        let x = pos.0 + (pos.0 * f64::cos(offset));
-        let y = pos.1 + (pos.1 * f64::sin(offset));
-
-        Position(x, y)
+        (left, right)
     }
 }
 
