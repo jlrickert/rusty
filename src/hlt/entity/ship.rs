@@ -9,7 +9,7 @@ use super::{Position, Planet, DockingStatus};
 use super::Entity;
 
 /// A ship in the game.
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct Ship {
     pub id: i32,
     pub position: Position,
@@ -76,55 +76,60 @@ impl Ship {
         Position(x, y)
     }
 
-    pub fn navigate<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Command> {
-        let colliding_planet = game_map.planet_between(self, target, self.radius() + 0.1);
-        if colliding_planet.is_none() {
-            let distance = self.distance_with(target);
-            let angle = self.angle_with(target);
-            return Some(self.thrust(min(MAX_SPEED, distance as i32), angle as i32));
-        }
-
-        let planet = colliding_planet.unwrap();
-        let (sub_target, is_left) = {
-            let (left, right) = self.find_avoidance_pair(planet, 3.0);
-            if left.distance_with(target) < right.distance_with(target) {
-                (left, true)
+    // navigate in the direction or to the target location making slight
+    // adjustments to avoid collisions.
+    pub fn navigate_to<T: Entity>(&self, target: &T, game_map: &GameMap, min_distance: Option<f64>) -> Option<Command> {
+        debug!("Ship {} navigating from {} to {}", self.id, self.position(), target.position());
+        let mut attempts = 4 * 50; // should a be a multiple of 4
+        let mut adjust = 0.0;
+        let angular_step = 0.5;
+        let angle = self.angle_with(target).to_radians();
+        let speed = {
+            if self.distance_with(target) < MAX_SPEED as f64 {
+                self.distance_with(target)
             } else {
-                (right, false)
+                MAX_SPEED as f64
             }
         };
+        while attempts > 0 {
+            let Position(ship_x, ship_y) = self.position();
+            let x =  ship_x + speed * f64::cos(angle + adjust);
+            let y =  ship_y + speed * f64::sin(angle + adjust);
+            let sub_target = Position(x, y);
+            let pos = self.try_path(&sub_target, game_map, min_distance.unwrap_or(self.radius() + 0.1));
+            if let Some(pos) = pos {
+                let angle = self.angle_with(&pos);
+                let distance = self.distance_with(&pos);
+                return Some(self.thrust(distance as i32, angle as i32));
+            }
 
-        let distance = self.distance_with(&sub_target);
-        let angle = self.angle_with(&sub_target);
-        Some(self.thrust(min(MAX_SPEED, distance as i32), angle as i32))
+            adjust = match attempts % 4 {
+                0 => adjust + angular_step,
+                2 => adjust - angular_step,
+                _ => adjust * -1.0,
+            };
+            attempts -= 1;
+        }
+        None
     }
 
-    fn find_avoidance_pair<T: Entity>(&self, target: &T, min_distance: f64) -> (Position, Position) {
-        let pos = target.position();
-        let radius = target.radius() + self.radius() + min_distance;
-        let distance = self.distance_with(target);
-        let angle = self.angle_with(target);
-        let offset = if radius >= distance {
-            f64::consts::PI/2.0
-        } else {
-            f64::asin(radius / distance)
-        };
-
-        // cos(a+o+90)(p_r+f)+p_x, sin(a+o+90)(p_r+f)t+p_y)
-
-        let pi = f64::consts::PI;
-        let left = {
-            let x = pos.0 + (pos.0 + min_distance) * f64::cos(angle + offset + pi / 2.0);
-            let y = pos.1 + (pos.1 + min_distance) * f64::sin(angle + offset + pi / 2.0);
-            Position(x, y)
-        };
-        let right = {
-            let x = pos.0 + (pos.0 + min_distance) * f64::cos(angle + offset + pi / 2.0);
-            let y = pos.1 + (pos.1 + min_distance) * f64::sin(angle + offset - pi / 2.0);
-            Position(x, y)
-        };
-
-        (left, right)
+    fn try_path<T: Entity>(
+        &self,
+        target: &T,
+        game_map: &GameMap,
+        min_distance: f64,
+    ) -> Option<Position> {
+        trace!("ship {} attempting {}", self.id, target.position());
+        if let Some(_) = game_map.planet_between(self, target, self.radius() + 0.1) {
+            trace!("Planet collision found");
+            return None
+        }
+        if let Some(ship) = game_map.ship_collision(self, target, 0.1) {
+            trace!("collision with {} detected", ship.id);
+            return None
+        }
+        trace!("ship {} found sub target {}", self.id, target.position());
+        return Some(target.position());
     }
 }
 
@@ -158,6 +163,12 @@ impl Decodable for Ship {
             progress,
             cooldown,
         }
+    }
+}
+
+impl PartialEq for Ship {
+    fn eq(&self, other: &Ship) -> bool {
+        self.id == other.id
     }
 }
 

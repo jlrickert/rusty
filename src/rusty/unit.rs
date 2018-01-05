@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+use std::collections::vec_deque::VecDeque;
 use std::cmp::min;
 use std::cmp::Ordering::{Less, Equal, Greater};
 use hlt::constants::{MAX_SPEED, DOCK_RADIUS};
@@ -5,17 +7,15 @@ use hlt::command::Command;
 use hlt::entity::{Entity, Ship, Position, Planet};
 use hlt::game_map::GameMap;
 
+use super::constants::MIN_PLANET_DISTANCE;
 use super::behavior::Behavior;
-
-struct UnitState {}
-
 
 #[derive(Debug)]
 pub struct Unit {
     pub ship_id: i32,
     pub behavior: Behavior,
     pub target: Option<i32>,
-    target_pos: Option<Position>,
+    target_queue: VecDeque<Position>,
 }
 
 impl Unit {
@@ -24,7 +24,7 @@ impl Unit {
             behavior: behavior,
             ship_id: ship.id,
             target: None,
-            target_pos: None,
+            target_queue: VecDeque::new(),
         }
     }
 
@@ -36,10 +36,7 @@ impl Unit {
                        self.target
                        .and_then(|id| Some(id.to_string()))
                        .unwrap_or("None".to_string())),
-               format!("{}",
-                       self.target_pos
-                       .and_then(|pos| Some(format!("{}", pos)))
-                       .unwrap_or("None".to_string())),
+               format!("{:?}", self.target_queue),
                ship.and_then(|ship| Some(format!("{}", ship))).unwrap_or("None".to_string()),
         )
     }
@@ -56,7 +53,8 @@ impl Unit {
 
         if ship.is_docked() {
             self.target = None;
-            self.target_pos = None;
+            self.target_queue.clear();
+            debug!("Ship {}: Already docked or docking. Nothing to do", self.ship_id);
             return;
         }
 
@@ -67,8 +65,8 @@ impl Unit {
         }
     }
 
-    /// Executes the logic for the play
-    pub fn execute(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
+    /// Execute the logic for this units turn
+    pub fn execute(&mut self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
         if ship.id != self.ship_id {
             panic!(format!(
                 "Mismatch ship and unit id: Ship id == {}, Unit id == {}",
@@ -78,26 +76,130 @@ impl Unit {
         }
 
         if ship.is_docked() {
+            debug!("Ship {}: docked with {:?}", self.ship_id, self.target);
             return Some(Command::Nop);
         }
 
-        match self.behavior {
-            Behavior::Settler => self.exec_settler(&ship, game_map),
-            Behavior::Raider => self.exec_raider(&ship, game_map),
-            _ => self.exec_settler(&ship, game_map),
+        if let Some(target) = self.target.and_then(|id| game_map.get_planet(id)) {
+            match self.behavior {
+                Behavior::Settler | Behavior::Raider => if ship.can_dock(target) {
+                    debug!("Ship {}: docking with {:?}", self.ship_id, self.target);
+                    return Some(ship.dock(target))
+                }
+                _ => (),
+            }
+
+            if let Some(sub_target) = self.target_queue.pop_front() {
+                if sub_target.distance_with(ship) > MAX_SPEED as f64 {
+                    self.target_queue.push_front(sub_target);
+                }
+
+                if sub_target.position() == target.position() {
+                    let pos = match self.behavior {
+                        Behavior::Raider => if target.owner.is_none() {
+                            ship.closest_point_to(target, MIN_PLANET_DISTANCE)
+                        } else {
+                            ship.furthest_point_to(target, MIN_PLANET_DISTANCE)
+                        },
+                        _ => ship.closest_point_to(target, MIN_PLANET_DISTANCE),
+                    };
+                    return ship.navigate_to(&pos, game_map, Some(MIN_PLANET_DISTANCE))
+                } else {
+                    return ship.navigate_to(&sub_target, game_map, Some(MIN_PLANET_DISTANCE))
+                }
+            }
         }
+        return None
+    }
+
+    fn update_route(& mut self, game_map: &GameMap) {
+        let ship = game_map.get_ship(self.ship_id).expect(
+            "Bot updating a unit that no longer exists",
+        );
+        let target = self.target.and_then(|id| game_map.get_planet(id)).expect(
+            "Target updated to an invalid planet",
+        );
+
+        let mut cur = ship.position();
+        debug!("Ship {}: Updating route for target {}", ship.id, target);
+        loop {
+            // Possible conflicting planet
+            if let Some(conflict) = game_map.planet_between(&cur, target, MIN_PLANET_DISTANCE) {
+                if conflict == target {
+                    self.target_queue.push_back(target.position);
+                    break;
+                }
+
+                trace!("Ship {}: conflict detected between {} and {};", ship.id, cur, conflict.position());
+                let angle = cur.angle_with(conflict);
+                let distance = cur.distance_with(conflict);
+                let radius = conflict.radius + MIN_PLANET_DISTANCE;
+                let Position(planet_x, planet_y) = conflict.position();
+                let pos = {
+                    let p1 = {
+                        let x = radius * f64::cos(angle + PI / 2.0) + planet_x;
+                        let y = radius * f64::sin(angle + PI / 2.0) + planet_y;
+                        Position(x, y)
+                    };
+                    let p2 = {
+                        let x = radius * f64::cos(angle - PI / 2.0) + planet_x;
+                        let y = radius * f64::sin(angle - PI / 2.0) + planet_y;
+                        Position(x, y)
+                    };
+                    if target.distance_with(&p1) < target.distance_with(&p2) {
+                        p1
+                    } else {
+                        p2
+                    }
+                };
+                let middle = {
+                    let Position(cur_x, cur_y) = cur.position();
+                    let offset =  {
+                        if radius < distance {
+                            let sign = (cur.angle_with(&pos) - cur.angle_with(conflict)).signum();
+                            sign * f64::asin(radius / distance)
+                        } else {
+                            PI / 2.0
+                        }
+                    };
+                    let distance = MAX_SPEED as f64;
+                    let x = distance * f64::cos(angle + offset) + cur_x;
+                    let y = distance * f64::sin(angle + offset) + cur_y;
+                    Position(x, y)
+                };
+
+                self.target_queue.push_back(middle);
+                self.target_queue.push_back(pos);
+                cur = pos;
+            } else {
+                trace!("No conflict found");
+                self.target_queue.push_back(target.position);
+                break;
+            }
+        }
+        debug!("Ship {}: Route calculated {:?}", self.ship_id, self.target_queue)
     }
 
     fn update_settler(&mut self, ship: &Ship, game_map: &GameMap) {
+        debug!("Ship {}: updating with settler settings", self.ship_id);
         let me = game_map.me().id;
+
+        let need_new_target = self.target
+            .and_then(|target| game_map.get_planet(target))
+            .and_then(|planet| Some(planet.owner == Some(me) && planet.is_full()))
+            .unwrap_or(true);
+
+        if !need_new_target {
+            return;
+        }
 
         // find a new target
         let planet_iter = game_map.all_planets().iter();
         let target = planet_iter
-            .filter(|planet| if planet.hp <= 0 {
+            .filter(|planet| if planet.is_dead() {
                 false
             } else {
-                planet.owner == Some(me) && !planet.is_full()
+                planet.owner == Some(me) && !planet.is_full() || planet.owner != Some(me)
             })
             .min_by(|&a, &b| {
                 let dist_a = ship.distance_with(a);
@@ -115,23 +217,21 @@ impl Unit {
         if target.is_none() {
             self.behavior = Behavior::Raider;
             self.target = None;
-            self.target_pos = None;
+            self.target_queue.clear();
             self.update(ship, game_map);
         } else {
             self.target = target;
+            self.update_route(game_map);
         }
     }
 
     fn update_raider(&mut self, ship: &Ship, game_map: &GameMap) {
+        debug!("Ship {}: updating with raider settings", self.ship_id);
         let me = game_map.me().id;
 
         let need_new_target = self.target
             .and_then(|target| game_map.all_planets().get(target as usize))
-            .and_then(|planet| if planet.hp <= 0 {
-                Some(true)
-            } else {
-                Some(planet.owner == Some(me))
-            })
+            .and_then(|planet| Some(planet.owner == Some(me)))
             .unwrap_or(true);
 
         if !need_new_target {
@@ -170,97 +270,7 @@ impl Unit {
 
         if let Some(target) = planet {
             self.target = Some(target.id);
-            if target.owner.is_some() {
-                self.target_pos = Some(ship.furthest_point_to(target, 3.0));
-            } else {
-                self.target_pos = Some(ship.closest_point_to(target, 3.0));
-            }
+            self.update_route(game_map);
         }
     }
-
-    fn exec_settler(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
-        self.target.and_then(|id| {
-            let planet = game_map.get_planet(id).expect("wtf");
-            if ship.can_dock(planet) {
-                Some(ship.dock(planet))
-            } else {
-                ship.navigate(&ship.closest_point_to(planet, 3.0), game_map)
-            }
-        })
-    }
-
-    fn exec_raider(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
-        self.target
-            .and_then(|id| game_map.get_planet(self.target.unwrap()))
-            .and_then(|planet| {
-                let can_dock = ship.can_dock(planet);
-                let planet_exists = planet.hp > 0;
-                if can_dock && planet_exists {
-                    Some(ship.dock(planet))
-                } else {
-                    ship.navigate(&self.target_pos.unwrap(), game_map)
-                }
-            })
-    }
-
-
-    fn exec_defender(&self, ship: &Ship, game_map: &GameMap) -> Option<Command> {
-        None
-    }
-
-    fn update_defender_target(&self, ship: &Ship, game_map: &GameMap) -> Option<i32> {
-        None
-    }
-
-    // fn navigate<T: Entity>(&self, ship: &Ship, target: &T, game_map: &GameMap) -> Option<Command> {
-    //     let planet_collision = game_map.planet_between(ship, target, 0.1);
-    //     let ship_collision = game_map.ship_between(ship, target);
-
-    //     if planet_collision.is_some() && ship_collision.is_some() {
-    //         let ship_distance = ship.distance_with(ship_collision.unwrap());
-    //         let planet_distance = ship.distance_with(ship_collision.unwrap());
-    //         if (ship_distance < planet_distance) && (ship_distance < MAX_SPEED as f64) {
-    //             return Some(self.handle_collision(ship, ship_collision.unwrap()));
-    //         }
-    //     }
-
-    //     if ship_collision.is_some() {
-    //         let collidee = ship_collision.unwrap();
-    //         let ship_distance = ship.distance_with(collidee);
-    //         if ship_distance < MAX_SPEED as f64 {
-    //             return Some(self.handle_collision(ship, collidee));
-    //         }
-    //     }
-
-    //     if planet_collision.is_some() {
-    //         return Some(self.handle_collision(ship, planet_collision.unwrap()));
-    //     }
-
-    //     let distance = ship.distance_with(target);
-    //     let angle = ship.angle_with(target);
-    //     Some(ship.thrust(min(MAX_SPEED, distance as i32), angle as i32))
-    // }
-
-    // fn handle_collision<E: Entity>(&self, ship: &Ship, target: &E) -> Command {
-    //     // gives just enough fudge that ships do crash might be able to grow
-    //     // lower
-    //     let magic_number = 0.45;
-
-    //     let speed = MAX_SPEED;
-    //     let distance = ship.distance_with(target) + magic_number;
-    //     let radius = target.radius() + ship.radius() + magic_number;
-    //     let angle = ship.angle_with(target);
-    //     if distance < radius {
-    //         panic!(
-    //             "Distance {} must be larger than radius {}",
-    //             distance,
-    //             radius
-    //         );
-    //     }
-    //     let offset = f64::asin(radius / distance).to_degrees();
-    //     ship.thrust(
-    //         min(speed, (distance - magic_number) as i32),
-    //         (angle + offset) as i32,
-    //     )
-    // }
 }

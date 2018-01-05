@@ -1,5 +1,12 @@
+#[macro_use]
+extern crate log;
+extern crate simplelog;
+
 mod hlt;
 mod rusty;
+
+use std::fs::File;
+use simplelog::*;
 
 use hlt::game::Game;
 use rusty::Bot;
@@ -14,8 +21,15 @@ fn main() {
     let mut rusty = Bot::new(&game);
 
     // Initialize logging
-    // let mut logger = Logger::new(game.my_id);
-    // logger.log(&format!("Starting my {} bot!", name));
+    CombinedLogger::init(vec![
+        WriteLogger::new(
+            LogLevelFilter::Trace,
+            Config::default(),
+            File::create(&format!("log_{}", game.my_id)).expect(
+                "Unable to open log file",
+            )
+        ),
+    ]).unwrap();
 
     // Retrieve the first game map
     let game_map = game.update_map();

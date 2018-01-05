@@ -18,15 +18,20 @@ pub struct Planet {
 }
 
 impl Planet {
-    /// Determines if the planet has an owner.
+    /// Determine if the planet has an owner.
     pub fn is_owned(&self) -> bool {
         self.owner.is_some()
     }
 
-    /// Determines if the planet has been fully occupied (all possible ships are
+    /// Determine if the planet has been fully occupied (all possible ships are
     /// docked).
     pub fn is_full(&self) -> bool {
         self.docked_ships.len() >= self.num_docking_spots
+    }
+
+    /// Determine if the planet is dead.
+    pub fn is_dead(&self) -> bool {
+        self.hp <= 0
     }
 }
 
