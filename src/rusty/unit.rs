@@ -82,32 +82,45 @@ impl Unit {
 
         if let Some(target) = self.target.and_then(|id| game_map.get_planet(id)) {
             match self.behavior {
-                Behavior::Settler | Behavior::Raider => if ship.can_dock(target) {
+                Behavior::Raider => if ship.can_dock(target) {
                     debug!("Ship {}: docking with {:?}", self.ship_id, self.target);
                     return Some(ship.dock(target))
-                }
-                _ => (),
+                },
+                _ => if ship.can_dock(target) {
+                    debug!("Ship {}: docking with {:?}", self.ship_id, self.target);
+                    return Some(ship.dock(target))
+                },
             }
 
-            if let Some(sub_target) = self.target_queue.pop_front() {
-                if sub_target.distance_with(ship) > MAX_SPEED as f64 {
-                    self.target_queue.push_front(sub_target);
+            let pos = match self.behavior {
+                Behavior::Raider =>{
+                    if target.owner.is_none() {
+                        ship.closest_point_to(target, MIN_PLANET_DISTANCE)
+                    } else {
+                        ship.furthest_point_to(target, MIN_PLANET_DISTANCE)
+                    }
                 }
+                _ => ship.closest_point_to(target, MIN_PLANET_DISTANCE)
+            };
+            return ship.navigate_to(&pos, game_map);
+            // if let Some(sub_target) = self.target_queue.pop_front() {
+            //     if sub_target.distance_with(ship) > MAX_SPEED as f64 {
+            //         self.target_queue.push_front(sub_target);
+            //     }
 
-                if sub_target.position() == target.position() {
-                    let pos = match self.behavior {
-                        Behavior::Raider => if target.owner.is_none() {
-                            ship.closest_point_to(target, MIN_PLANET_DISTANCE)
-                        } else {
-                            ship.furthest_point_to(target, MIN_PLANET_DISTANCE)
-                        },
-                        _ => ship.closest_point_to(target, MIN_PLANET_DISTANCE),
-                    };
-                    return ship.navigate_to(&pos, game_map, Some(MIN_PLANET_DISTANCE))
-                } else {
-                    return ship.navigate_to(&sub_target, game_map, Some(MIN_PLANET_DISTANCE))
-                }
-            }
+            //     if sub_target.position() == target.position() {
+            //         let pos = match self.behavior {
+            //             Behavior::Raider => if target.owner.is_none() {
+            //                 ship.closest_point_to(target, MIN_PLANET_DISTANCE)
+            //             } else {
+            //                 ship.furthest_point_to(target, MIN_PLANET_DISTANCE)
+            //             },
+            //             _ => ship.closest_point_to(target, MIN_PLANET_DISTANCE),
+            //         };
+            //         return ship.navigate_to(&pos, game_map, Some(MIN_PLANET_DISTANCE))
+            //     } else {
+            //         return ship.navigate_to(&sub_target, game_map, Some(MIN_PLANET_DISTANCE))
+            //     }
         }
         return None
     }

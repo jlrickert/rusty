@@ -78,8 +78,13 @@ impl Ship {
 
     // navigate in the direction or to the target location making slight
     // adjustments to avoid collisions.
-    pub fn navigate_to<T: Entity>(&self, target: &T, game_map: &GameMap, min_distance: Option<f64>) -> Option<Command> {
-        debug!("Ship {} navigating from {} to {}", self.id, self.position(), target.position());
+    pub fn navigate_to<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Command> {
+        debug!(
+            "Ship {} navigating from {} to {}",
+            self.id,
+            self.position(),
+            target.position()
+        );
         let mut attempts = 4 * 50; // should a be a multiple of 4
         let mut adjust = 0.0;
         let angular_step = 0.5;
@@ -93,10 +98,10 @@ impl Ship {
         };
         while attempts > 0 {
             let Position(ship_x, ship_y) = self.position();
-            let x =  ship_x + speed * f64::cos(angle + adjust);
-            let y =  ship_y + speed * f64::sin(angle + adjust);
+            let x = ship_x + speed * f64::cos(angle + adjust);
+            let y = ship_y + speed * f64::sin(angle + adjust);
             let sub_target = Position(x, y);
-            let pos = self.try_path(&sub_target, game_map, min_distance.unwrap_or(self.radius() + 0.1));
+            let pos = self.try_path(&sub_target, game_map);
             if let Some(pos) = pos {
                 let angle = self.angle_with(&pos);
                 let distance = self.distance_with(&pos);
@@ -113,20 +118,15 @@ impl Ship {
         None
     }
 
-    fn try_path<T: Entity>(
-        &self,
-        target: &T,
-        game_map: &GameMap,
-        min_distance: f64,
-    ) -> Option<Position> {
+    fn try_path<T: Entity>(&self, target: &T, game_map: &GameMap) -> Option<Position> {
         trace!("ship {} attempting {}", self.id, target.position());
         if let Some(_) = game_map.planet_between(self, target, self.radius() + 0.1) {
             trace!("Planet collision found");
-            return None
+            return None;
         }
         if let Some(ship) = game_map.ship_collision(self, target, 0.1) {
             trace!("collision with {} detected", ship.id);
-            return None
+            return None;
         }
         trace!("ship {} found sub target {}", self.id, target.position());
         return Some(target.position());
